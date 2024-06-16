@@ -4,21 +4,19 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"telegram-bot/price"
+	"strconv"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-
-const BotToken = "5869911418:AAF0KoALqB--cnqktty-Gn8LwqGbx1s3AF8"
-const TeleChannelID = -860049871
-
 func botToken() string {
-	if os.Getenv("BOT_TOKEN") == "" {
-		return BotToken
-	}
 	return os.Getenv("BOT_TOKEN")
+}
+
+func teleAutoTradingID() int64 {
+	id, _ := strconv.ParseInt(os.Getenv("TELE_GROUP_ID"), 10, 64)
+	return id
 }
 
 func initBot() *tgbotapi.BotAPI {
@@ -31,10 +29,29 @@ func initBot() *tgbotapi.BotAPI {
 	return bot
 }
 
+func getChannelIDs(bot *tgbotapi.BotAPI) {
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+
+	updates := bot.GetUpdatesChan(u)
+
+	channelIDs := make(map[int64]bool)
+	for update := range updates {
+		if update.Message != nil && update.Message.Chat.IsChannel() {
+			channelIDs[update.Message.Chat.ID] = true
+		}
+	}
+
+	log.Println("Available Channel IDs:")
+	for id := range channelIDs {
+		fmt.Println(id)
+	}
+}
+
 func telegramChannel(bot *tgbotapi.BotAPI) tgbotapi.Chat {
 	c, err := bot.GetChat(tgbotapi.ChatInfoConfig{
 		ChatConfig: tgbotapi.ChatConfig{
-			ChatID: TeleChannelID,
+			ChatID: teleAutoTradingID(),
 		},
 	})
 	if err != nil {
@@ -46,9 +63,8 @@ func telegramChannel(bot *tgbotapi.BotAPI) tgbotapi.Chat {
 func SendToTelegramChannel(message string) {
 	bot := initBot()
 	c := telegramChannel(bot)
-	if message == "" {
-		message = fmt.Sprintf("[UPDATE] At %s, hi teachers @phuocleanh @ldt25290 @thieunv @ducbk95\n %s", time.Now().Format(time.RFC3339), price.PricesMessage())
-	}
-	teleMsg := tgbotapi.NewMessage(c.ID, message)
-	bot.Send(teleMsg)
+	// getChannelIDs(bot)
+
+	message = fmt.Sprintf("[UPDATE] At %s, hi teacher @ducbk95\n Someone is calling to this API with these info:\n %s", time.Now().Format(time.RFC3339), message)
+	bot.Send(tgbotapi.NewMessage(c.ID, message))
 }
