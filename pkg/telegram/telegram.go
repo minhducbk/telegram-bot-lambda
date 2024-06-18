@@ -83,10 +83,10 @@ func SendToTelegramChannel(message string) {
 	// Fetch Binance balances
 	trader := trader.NewBinanceTrader()
 
-	otherMessage := fmt.Sprintf("< Before > Balances: \n")
+	otherMessage := fmt.Sprintf("<Before> Balances: \n")
 	balances := trader.GetBalances()
 	for asset, balance := range balances {
-		otherMessage += fmt.Sprintf("%s %s", balance, asset)
+		otherMessage += fmt.Sprintf("%s %s\n", balance, asset)
 	}
 	bot.Send(tgbotapi.NewMessage(c.ID, otherMessage))
 
@@ -94,10 +94,10 @@ func SendToTelegramChannel(message string) {
 	trader.PlaceMarketBuyOrder("MATIC", "USDT", 10)
 
 	// Fetch Binance balances again
-	otherMessage = fmt.Sprintf("< After > Balances: \n")
+	otherMessage = fmt.Sprintf("<After> Balances: \n")
 	balances = trader.GetBalances()
 	for asset, balance := range balances {
-		otherMessage += fmt.Sprintf("%s %s", balance, asset)
+		otherMessage += fmt.Sprintf("%s %s\n", balance, asset)
 	}
 	bot.Send(tgbotapi.NewMessage(c.ID, otherMessage))
 }
