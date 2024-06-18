@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -58,6 +59,38 @@ func (t *BinanceTrader) PlaceMarketBuyOrder(base, counter string, amount float64
 	quantity := amount / price
   log.Printf("Price %s/%s: %f\n", base, counter, price)
   log.Printf("We are about to place %f %s for %f %s \n", quantity, base, amount, counter)
+
+	// Fetch trading rules
+	exchangeInfo, err := t.Client.NewExchangeInfoService().Do(context.Background())
+	if err != nil {
+		log.Fatalf("Error getting exchange info: %v", err)
+	}
+
+	var stepSize, minQty, maxQty float64
+	for _, symbolInfo := range exchangeInfo.Symbols {
+		if symbolInfo.Symbol == symbol {
+			for _, filter := range symbolInfo.Filters {
+				if filter["filterType"].(string) == "LOT_SIZE" {
+					stepSize, _ = strconv.ParseFloat(filter["stepSize"].(string), 64)
+					minQty, _ = strconv.ParseFloat(filter["minQty"].(string), 64)
+					maxQty, _ = strconv.ParseFloat(filter["maxQty"].(string), 64)
+					break
+				}
+			}
+			break
+		}
+	}
+
+	// Ensure quantity meets the constraints
+	quantity = math.Floor(quantity/stepSize) * stepSize
+	if quantity < minQty {
+		quantity = minQty
+	} else if quantity > maxQty {
+		quantity = maxQty
+	}
+
+	log.Printf("Price %s: %f\n", symbol, price)
+	log.Printf("We are about to place %f %s for %f %s\n", quantity, base, amount, counter)
 
 	order, err := t.Client.NewCreateOrderService().Symbol(symbol).
 		Side(binance.SideTypeBuy).
