@@ -13,6 +13,12 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+type Alert struct {
+	Symbol  string `json:"symbol"`
+	Label string `json:"label"`
+}
+
+var AvailableLabels = []string{"Buy", "Wave 3 Start", "Wave 3 End", "Wave 2 Start", "Wave 4 Start", "Wave A Start", "Wave C Start"}
 
 func botToken() string {
 	return os.Getenv("BOT_TOKEN")
@@ -101,3 +107,8 @@ func SendToTelegramChannel(message string) {
 	}
 	bot.Send(tgbotapi.NewMessage(c.ID, otherMessage))
 }
+
+// {
+//   "symbol": "{{ticker}}",
+//   "label":  "{{strategy.order.alert_message}}"
+// }

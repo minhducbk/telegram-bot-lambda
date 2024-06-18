@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	binance "github.com/adshao/go-binance/v2"
 	"github.com/shopspring/decimal"
@@ -23,20 +24,72 @@ func NewBinanceTrader() *BinanceTrader {
 }
 
 func (t *BinanceTrader) GetBalances() map[string]string {
-    account, err := t.Client.NewGetAccountService().Do(context.Background())
-    if err != nil {
-        log.Fatalf("Error getting account balances: %v", err)
-        return nil
-    }
-    balances := map[string]string{}
-    for _, balance := range account.Balances {
-        assetBalance, _ := decimal.NewFromString(balance.Free)
-        if balance.Free != "0" && assetBalance.Truncate(0).String() != "0" && !strings.HasPrefix(balance.Asset, "LD") {
-            log.Printf("%s: %s, %s\n", balance.Asset, balance.Free, assetBalance.Truncate(0).String())
-            balances[balance.Asset] = balance.Free
-        }
-    }
-    return balances
+	const maxRetries = 3
+	const retryDelay = 2 * time.Second
+
+	var account *binance.Account
+	var prices []*binance.Price
+	var err error
+
+	// Retry loop for getting account balances
+	for i := 0; i < maxRetries; i++ {
+		account, err = t.Client.NewGetAccountService().Do(context.Background())
+		if err == nil {
+			break
+		}
+		log.Printf("Error getting account balances: %v", err)
+		time.Sleep(retryDelay)
+	}
+	if err != nil {
+		log.Fatalf("Failed to get account balances after %d attempts: %v", maxRetries, err)
+		return nil
+	}
+
+	// Retry loop for getting prices
+	for i := 0; i < maxRetries; i++ {
+		prices, err = t.Client.NewListPricesService().Do(context.Background())
+		if err == nil {
+			break
+		}
+		log.Printf("Error getting prices: %v", err)
+		time.Sleep(retryDelay)
+	}
+	if err != nil {
+		log.Fatalf("Failed to get prices after %d attempts: %v", maxRetries, err)
+		return nil
+	}
+
+	// Create a map to store the prices for easy lookup
+	priceMap := make(map[string]float64)
+	for _, p := range prices {
+		price, err := strconv.ParseFloat(p.Price, 64)
+		if err != nil {
+			log.Printf("Error parsing price for %s: %v", p.Symbol, err)
+			continue
+		}
+		priceMap[p.Symbol] = price
+	}
+
+	balances := map[string]string{}
+	for _, balance := range account.Balances {
+		assetBalance, _ := decimal.NewFromString(balance.Free)
+		if balance.Free != "0" && !strings.HasPrefix(balance.Asset, "LD") {
+			usdtValue := assetBalance
+			if balance.Asset != "USDT" {
+				price, ok := priceMap[balance.Asset+"USDT"]
+				if !ok {
+					log.Printf("Price not found for %sUSDT", balance.Asset)
+					continue
+				}
+				usdtValue = assetBalance.Mul(decimal.NewFromFloat(price))
+			}
+			if usdtValue.GreaterThan(decimal.NewFromFloat(0.5)) {
+				log.Printf("%s: %s, %s\n", balance.Asset, balance.Free, usdtValue.String())
+				balances[balance.Asset] = balance.Free
+			}
+		}
+	}
+	return balances
 }
 
 // PlaceMarketBuyOrder places a market buy order using the amount in the counter currency
