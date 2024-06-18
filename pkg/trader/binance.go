@@ -28,7 +28,7 @@ func (t *BinanceTrader) GetBalances() map[string]string {
 	const retryDelay = 2 * time.Second
 
 	var account *binance.Account
-	var prices []*binance.Price
+	var prices []*binance.SymbolPrice
 	var err error
 
 	// Retry loop for getting account balances
@@ -90,6 +90,37 @@ func (t *BinanceTrader) GetBalances() map[string]string {
 		}
 	}
 	return balances
+}
+
+func (t *BinanceTrader) GetPrices() map[string]float64 {
+	var prices []*binance.SymbolPrice
+	const maxRetries = 3
+	const retryDelay = 2 * time.Second
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		prices, err = t.Client.NewListPricesService().Do(context.Background())
+		if err == nil {
+			break
+		}
+		log.Printf("Error getting prices: %v", err)
+		time.Sleep(retryDelay)
+	}
+	if err != nil {
+		log.Fatalf("Failed to get prices after %d attempts: %v", maxRetries, err)
+		return nil
+	}
+
+	// Create a map to store the prices for easy lookup
+	priceMap := make(map[string]float64)
+	for _, p := range prices {
+		price, err := strconv.ParseFloat(p.Price, 64)
+		if err != nil {
+			log.Printf("Error parsing price for %s: %v", p.Symbol, err)
+			continue
+		}
+		priceMap[p.Symbol] = price
+	}
+	return priceMap
 }
 
 // PlaceMarketBuyOrder places a market buy order using the amount in the counter currency

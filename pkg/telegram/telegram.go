@@ -1,22 +1,35 @@
 package telegram
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
+
+	binance "github.com/adshao/go-binance/v2"
+	"github.com/shopspring/decimal"
 
 	"telegram-bot/pkg/ip"
 	"telegram-bot/pkg/trader"
-
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+const OrderStatusFilled = "FILLED"
+
 type Alert struct {
-	Symbol  string `json:"symbol"`
-	Label string `json:"label"`
+	Symbol string `json:"symbol"`
+	Label  string `json:"label"`
 }
+
+const (
+	TradeSize      float64 = 30 // 30 USDT
+	CandleInterval         = 3 * time.Hour
+)
 
 var AvailableLabels = []string{"Buy", "Wave 3 Start", "Wave 3 End", "Wave 2 Start", "Wave 4 Start", "Wave A Start", "Wave C Start"}
 
@@ -70,21 +83,35 @@ func telegramChannel(bot *tgbotapi.BotAPI) tgbotapi.Chat {
 	return c
 }
 
-func SendToTelegramChannel(message string) {
+func SendToTelegramChannel(eventBody string) {
+	var alert Alert
+
+	// Parse the JSON string into the alert variable
+	err := json.Unmarshal([]byte(eventBody), &alert)
+	if err != nil {
+		log.Fatalf("Error parsing JSON: %v, eventBody: %s", err, eventBody)
+	}
+	alertCoin := alert.Symbol
+	suffix := "USDT"
+
+	if strings.HasSuffix(alertCoin, suffix) {
+		alertCoin = alertCoin[:len(alertCoin)-len(suffix)]
+	}
+
 	log.Println("before initBot")
 	bot := initBot()
 	log.Println("after initBot")
 	c := telegramChannel(bot)
-
-	// Format and send the message
-	newMessage := fmt.Sprintf("[UPDATE] At %s, hi teacher @ducbk95\n Someone is calling to this API with these info:\n %s", time.Now().Format(time.RFC3339), message)
-	bot.Send(tgbotapi.NewMessage(c.ID, newMessage))
 
 	// Send Lambda function IP
 	ip, err := ip.GetPublicIP()
 	if err == nil {
 		bot.Send(tgbotapi.NewMessage(c.ID, "Lambda Function IP: " + ip))
 	}
+
+	// Format and send the message
+	newMessage := fmt.Sprintf("[UPDATE] At %s, @ducbk95\n Someone is calling to this API with this body:\n %s", time.Now().Format(time.RFC3339), eventBody)
+	bot.Send(tgbotapi.NewMessage(c.ID, newMessage))
 
 	// Fetch Binance balances
 	trader := trader.NewBinanceTrader()
@@ -96,8 +123,9 @@ func SendToTelegramChannel(message string) {
 	}
 	bot.Send(tgbotapi.NewMessage(c.ID, otherMessage))
 
-	// Place order
-	trader.PlaceMarketBuyOrder("MATIC", "USDT", 10)
+	log.Println("Processing: ", alert, alertCoin)
+	// Process alert based on rules
+	processAlert(trader, alert, alertCoin)
 
 	// Fetch Binance balances again
 	otherMessage = fmt.Sprintf("<After> Balances: \n")
@@ -108,7 +136,87 @@ func SendToTelegramChannel(message string) {
 	bot.Send(tgbotapi.NewMessage(c.ID, otherMessage))
 }
 
+func processAlert(trader *trader.BinanceTrader, alert Alert, alertCoin string) {
+	usdtBalance, _ := decimal.NewFromString(trader.GetBalances()["USDT"])
+	tradeSize := decimal.NewFromFloat(30)
+	prices := trader.GetPrices()
+	coinBalance, _ := decimal.NewFromString(trader.GetBalances()[alertCoin])
+	coinBalanceInFloat, _ := coinBalance.Float64()
+	fmt.Println("Coin balance: ", coinBalanceInFloat, ". Coin price: ", prices[alert.Symbol])
+	switch alert.Label {
+	case "Buy", "Wave 3 Start":
+		// Check if there is an existing trade
+		if coinBalanceInFloat * prices[alert.Symbol] > 1 {
+			log.Printf("Existing trade for %s, skipping buy order", alertCoin)
+			return
+		}
+
+		// Determine the size of the trade
+		if usdtBalance.GreaterThan(tradeSize) {
+			tradeSize = decimal.NewFromFloat(30)
+		} else {
+			tradeSize = usdtBalance
+		}
+
+		if tradeSize.GreaterThan(decimal.NewFromFloat(0)) {
+			tradeSizeFloat, _ := tradeSize.Float64()
+			trader.PlaceMarketBuyOrder(alertCoin, "USDT", tradeSizeFloat)
+		} else {
+			log.Println("Insufficient USDT balance to place a buy order")
+		}
+	case "Wave 3 End", "Wave 2 Start", "Wave 4 Start", "Wave A Start", "Wave C Start":
+		// Check if there is an existing trade
+
+		if trade, exists := getTrade(trader, alert.Symbol); exists && (coinBalanceInFloat * prices[alert.Symbol] > 0.05) {
+			// Check if the exit signal is within the same candle interval as the entry
+			if time.Since(time.Unix(trade.Time/1000, 0)) < CandleInterval {
+				log.Printf("Exit signal for %s occurred within the same candle interval, skipping sell order", alert.Symbol)
+				return
+			}
+
+			quantity, _ := decimal.NewFromString(trader.GetBalances()[alertCoin])
+			trader.PlaceMarketSellOrder(alertCoin, "USDT", quantity.InexactFloat64())
+		} else {
+			log.Printf("No existing trade for %s, skipping sell order", alertCoin)
+		}
+	default:
+		log.Printf("Unknown label: %s", alert.Label)
+	}
+}
+
+func isExistingTrade(trader *trader.BinanceTrader, symbol string) bool {
+	orders, err := trader.Client.NewListOrdersService().Symbol(symbol).Do(context.Background())
+	if err != nil {
+		log.Fatalf("Error fetching order history for %s: %v", symbol, err)
+	}
+	for _, order := range orders {
+		if order.Status == binance.OrderStatusTypeFilled && order.Side == binance.SideTypeBuy {
+			return true
+		}
+	}
+	return false
+}
+
+func getTrade(trader *trader.BinanceTrader, symbol string) (binance.Order, bool) {
+	orders, err := trader.Client.NewListOrdersService().Symbol(symbol).Do(context.Background())
+	if err != nil {
+		log.Fatalf("Error fetching order history for %s: %v", symbol, err)
+	}
+
+	// Sort orders by creation time in descending order
+	sort.Slice(orders, func(i, j int) bool {
+		return orders[i].Time > orders[j].Time
+	})
+
+	for _, order := range orders {
+		if order.Status == binance.OrderStatusTypeFilled && order.Side == binance.SideTypeBuy {
+			return *order, true
+		}
+	}
+	return binance.Order{}, false
+}
+
 // {
-//   "symbol": "{{ticker}}",
-//   "label":  "{{strategy.order.alert_message}}"
+// "symbol": "{{ticker}}",
+// "label": "{{strategy.order.alert_message}}"
 // }

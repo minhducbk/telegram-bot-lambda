@@ -19,8 +19,7 @@ import (
 
 func lambdaHanlder(event events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	log.Println("Hello World", event)
-	message := fmt.Sprintf("Resource %s. Body: %s. Path: %s", event.Resource, event.Body, event.Path)
-	telegram.SendToTelegramChannel(message)
+	telegram.SendToTelegramChannel(event.Body)
 
 	return events.APIGatewayProxyResponse{StatusCode: 200, Body: event.Body}, nil
 }
