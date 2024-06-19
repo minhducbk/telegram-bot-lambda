@@ -16,7 +16,6 @@ import (
 
 	"telegram-bot/pkg/ip"
 	"telegram-bot/pkg/trader"
-
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -84,6 +83,18 @@ func telegramChannel(bot *tgbotapi.BotAPI) tgbotapi.Chat {
 	return c
 }
 
+func sendMessageWithRetry(bot *tgbotapi.BotAPI, msg tgbotapi.MessageConfig, retries int) {
+	for i := 0; i < retries; i++ {
+		_, err := bot.Send(msg)
+		if err == nil {
+			return
+		}
+		log.Printf("Error sending message to Telegram: %v. Retrying %d/%d...\n", err, i+1, retries)
+		time.Sleep(time.Duration(2^i) * time.Second) // Exponential backoff
+	}
+	log.Printf("Failed to send message to Telegram after %d retries\n", retries)
+}
+
 func SendToTelegramChannel(eventBody string) {
 	var alert Alert
 
@@ -107,34 +118,38 @@ func SendToTelegramChannel(eventBody string) {
 	// Send Lambda function IP
 	ip, err := ip.GetPublicIP()
 	if err == nil {
-		bot.Send(tgbotapi.NewMessage(c.ID, "Lambda Function IP: " + ip))
+		msg := tgbotapi.NewMessage(c.ID, "Lambda Function IP: "+ip)
+		sendMessageWithRetry(bot, msg, 10)
 	}
 
 	// Format and send the message
 	newMessage := fmt.Sprintf("[UPDATE] At %s, @ducbk95\n Someone is calling to this API with this body:\n %s", time.Now().Format(time.RFC3339), eventBody)
-	bot.Send(tgbotapi.NewMessage(c.ID, newMessage))
+	msg := tgbotapi.NewMessage(c.ID, newMessage)
+	sendMessageWithRetry(bot, msg, 10)
 
 	// Fetch Binance balances
 	trader := trader.NewBinanceTrader()
 
-	otherMessage := fmt.Sprintf("<Before> Balances: \n")
+	beforeBalanceMessage := fmt.Sprintf("<Before> Balances: \n")
 	balances := trader.GetBalances()
 	for asset, balance := range balances {
-		otherMessage += fmt.Sprintf("%s %s\n", balance, asset)
+		beforeBalanceMessage += fmt.Sprintf("%s %s\n", balance, asset)
 	}
-	bot.Send(tgbotapi.NewMessage(c.ID, otherMessage))
+	msg = tgbotapi.NewMessage(c.ID, beforeBalanceMessage)
+	sendMessageWithRetry(bot, msg, 10)
 
 	log.Println("Processing: ", alert, alertCoin)
 	// Process alert based on rules
 	processAlert(trader, alert, alertCoin)
 
 	// Fetch Binance balances again
-	otherMessage = fmt.Sprintf("<After> Balances: \n")
+	otherMessage := fmt.Sprintf("<After> Balances: \n")
 	balances = trader.GetBalances()
 	for asset, balance := range balances {
 		otherMessage += fmt.Sprintf("%s %s\n", balance, asset)
 	}
-	bot.Send(tgbotapi.NewMessage(c.ID, otherMessage))
+	msg = tgbotapi.NewMessage(c.ID, otherMessage)
+	sendMessageWithRetry(bot, msg, 10)
 }
 
 func processAlert(trader *trader.BinanceTrader, alert Alert, alertCoin string) {
@@ -147,7 +162,7 @@ func processAlert(trader *trader.BinanceTrader, alert Alert, alertCoin string) {
 	switch alert.Label {
 	case "Buy", "Wave 3 Start":
 		// Check if there is an existing trade
-		if coinBalanceInFloat * prices[alert.Symbol] > 1 {
+		if coinBalanceInFloat*prices[alert.Symbol] > 1 {
 			log.Printf("Existing trade for %s, skipping buy order", alertCoin)
 			return
 		}
@@ -168,7 +183,7 @@ func processAlert(trader *trader.BinanceTrader, alert Alert, alertCoin string) {
 	case "Wave 3 End", "Wave 2 Start", "Wave 4 Start", "Wave A Start", "Wave C Start":
 		// Check if there is an existing trade
 
-		if trade, exists := getTrade(trader, alert.Symbol); exists && (coinBalanceInFloat * prices[alert.Symbol] > 0.05) {
+		if trade, exists := getTrade(trader, alert.Symbol); exists && (coinBalanceInFloat*prices[alert.Symbol] > 0.05) {
 			// Check if the exit signal is within the same candle interval as the entry
 			if time.Since(time.Unix(trade.Time/1000, 0)) < CandleInterval {
 				log.Printf("Exit signal for %s occurred within the same candle interval, skipping sell order", alert.Symbol)

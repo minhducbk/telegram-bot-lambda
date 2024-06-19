@@ -79,7 +79,7 @@ func (t *BinanceTrader) GetBalances() map[string]string {
 			if balance.Asset != "USDT" {
 				price, ok := priceMap[balance.Asset+"USDT"]
 				if !ok {
-					log.Printf("Price not found for %sUSDT", balance.Asset)
+					// log.Printf("Price not found for %sUSDT", balance.Asset)
 					continue
 				}
 				usdtValue = assetBalance.Mul(decimal.NewFromFloat(price))
