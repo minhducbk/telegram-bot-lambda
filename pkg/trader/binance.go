@@ -142,8 +142,8 @@ func (t *BinanceTrader) PlaceMarketBuyOrder(base, counter string, amount float64
 
 	// Calculate the quantity in the base currency
 	quantity := amount / price
-  log.Printf("Price %s/%s: %f\n", base, counter, price)
-  log.Printf("We are about to place %f %s for %f %s \n", quantity, base, amount, counter)
+	log.Printf("Price %s/%s: %f\n", base, counter, price)
+	log.Printf("We are about to place %f %s for %f %s \n", quantity, base, amount, counter)
 
 	// Fetch trading rules
 	exchangeInfo, err := t.Client.NewExchangeInfoService().Do(context.Background())
@@ -174,13 +174,16 @@ func (t *BinanceTrader) PlaceMarketBuyOrder(base, counter string, amount float64
 		quantity = maxQty
 	}
 
+	// Format the quantity to the required precision
+	formattedQuantity := strconv.FormatFloat(quantity, 'f', 8, 64)
+
 	log.Printf("Price %s: %f\n", symbol, price)
-	log.Printf("We are about to place %f %s for %f %s\n", quantity, base, amount, counter)
+	log.Printf("We are about to place %s %s for %f %s\n", formattedQuantity, base, amount, counter)
 
 	order, err := t.Client.NewCreateOrderService().Symbol(symbol).
 		Side(binance.SideTypeBuy).
 		Type(binance.OrderTypeMarket).
-		Quantity(fmt.Sprintf("%f", quantity)).
+		Quantity(formattedQuantity).
 		Do(context.Background())
 
 	if err != nil {
