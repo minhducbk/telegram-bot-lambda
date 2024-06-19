@@ -14,6 +14,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const maxRetries = 10
+
 type BinanceTrader struct {
     Client *binance.Client
 }
@@ -24,7 +26,6 @@ func NewBinanceTrader() *BinanceTrader {
 }
 
 func (t *BinanceTrader) GetBalances() map[string]string {
-	const maxRetries = 3
 	const retryDelay = 2 * time.Second
 
 	var account *binance.Account
@@ -94,7 +95,7 @@ func (t *BinanceTrader) GetBalances() map[string]string {
 
 func (t *BinanceTrader) GetPrices() map[string]float64 {
 	var prices []*binance.SymbolPrice
-	const maxRetries = 3
+
 	const retryDelay = 2 * time.Second
 	var err error
 	for i := 0; i < maxRetries; i++ {

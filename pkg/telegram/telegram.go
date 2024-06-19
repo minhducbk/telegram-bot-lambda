@@ -16,6 +16,7 @@ import (
 
 	"telegram-bot/pkg/ip"
 	"telegram-bot/pkg/trader"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -28,7 +29,7 @@ type Alert struct {
 
 const (
 	TradeSize      float64 = 30 // 30 USDT
-	CandleInterval         = 3 * time.Hour
+	CandleInterval         = 30 * time.Minute
 )
 
 var AvailableLabels = []string{"Buy", "Wave 3 Start", "Wave 3 End", "Wave 2 Start", "Wave 4 Start", "Wave A Start", "Wave C Start"}
@@ -218,5 +219,5 @@ func getTrade(trader *trader.BinanceTrader, symbol string) (binance.Order, bool)
 
 // {
 // "symbol": "{{ticker}}",
-// "label": "{{strategy.order.alert_message}}"
+// "label": "Buy"
 // }
