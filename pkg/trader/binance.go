@@ -197,10 +197,42 @@ func (t *BinanceTrader) PlaceMarketBuyOrder(base, counter string, amount float64
 func (t *BinanceTrader) PlaceMarketSellOrder(base, counter string, quantity float64) {
 	symbol := fmt.Sprintf("%s%s", base, counter)
 
+	// Fetch trading rules
+	exchangeInfo, err := t.Client.NewExchangeInfoService().Do(context.Background())
+	if err != nil {
+		log.Fatalf("Error getting exchange info: %v", err)
+	}
+
+	var stepSize, minQty, maxQty float64
+	for _, symbolInfo := range exchangeInfo.Symbols {
+		if symbolInfo.Symbol == symbol {
+			for _, filter := range symbolInfo.Filters {
+				if filter["filterType"].(string) == "LOT_SIZE" {
+					stepSize, _ = strconv.ParseFloat(filter["stepSize"].(string), 64)
+					minQty, _ = strconv.ParseFloat(filter["minQty"].(string), 64)
+					maxQty, _ = strconv.ParseFloat(filter["maxQty"].(string), 64)
+					break
+				}
+			}
+			break
+		}
+	}
+
+	// Ensure quantity meets the constraints
+	quantity = math.Floor(quantity/stepSize) * stepSize
+	if quantity < minQty {
+		quantity = minQty
+	} else if quantity > maxQty {
+		quantity = maxQty
+	}
+
+	// Format the quantity to the required precision
+	formattedQuantity := strconv.FormatFloat(quantity, 'f', 8, 64)
+
 	order, err := t.Client.NewCreateOrderService().Symbol(symbol).
 		Side(binance.SideTypeSell).
 		Type(binance.OrderTypeMarket).
-		Quantity(fmt.Sprintf("%f", quantity)).
+		Quantity(formattedQuantity).
 		Do(context.Background())
 
 	if err != nil {
@@ -209,3 +241,4 @@ func (t *BinanceTrader) PlaceMarketSellOrder(base, counter string, quantity floa
 
 	log.Printf("Market Sell Order placed: %+v\n", order)
 }
+
