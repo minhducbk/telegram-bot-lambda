@@ -16,6 +16,7 @@ import (
 
 	"telegram-bot/pkg/ip"
 	"telegram-bot/pkg/trader"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -123,32 +124,32 @@ func SendToTelegramChannel(eventBody string) {
 	}
 
 	// Format and send the message
-	newMessage := fmt.Sprintf("[UPDATE] At %s, @ducbk95\n Someone is calling to this API with this body:\n %s", time.Now().Format(time.RFC3339), eventBody)
-	msg := tgbotapi.NewMessage(c.ID, newMessage)
-	sendMessageWithRetry(bot, msg, 10)
+	newMessage := fmt.Sprintf("[UPDATE] At %s, @ducbk95, someone is calling with this body: %s", time.Now().Format(time.RFC3339), eventBody)
+	// msg := tgbotapi.NewMessage(c.ID, newMessage)
+	// sendMessageWithRetry(bot, msg, 10)
 
 	// Fetch Binance balances
 	trader := trader.NewBinanceTrader()
 
-	beforeBalanceMessage := fmt.Sprintf("<Before> Balances: \n")
+	newMessage += fmt.Sprintf("[BEFORE] Balances: \n")
 	balances := trader.GetBalances()
 	for asset, balance := range balances {
-		beforeBalanceMessage += fmt.Sprintf("%s %s\n", balance, asset)
+		newMessage += fmt.Sprintf("%s %s\n", balance, asset)
 	}
-	msg = tgbotapi.NewMessage(c.ID, beforeBalanceMessage)
-	sendMessageWithRetry(bot, msg, 10)
+	// msg = tgbotapi.NewMessage(c.ID, beforeBalanceMessage)
+	// sendMessageWithRetry(bot, msg, 10)
 
 	log.Println("Processing: ", alert, alertCoin)
 	// Process alert based on rules
 	processAlert(trader, alert, alertCoin)
 
 	// Fetch Binance balances again
-	otherMessage := fmt.Sprintf("<After> Balances: \n")
+	newMessage += fmt.Sprintf("[AFTER] Balances: \n")
 	balances = trader.GetBalances()
 	for asset, balance := range balances {
-		otherMessage += fmt.Sprintf("%s %s\n", balance, asset)
+		newMessage += fmt.Sprintf("%s %s\n", balance, asset)
 	}
-	msg = tgbotapi.NewMessage(c.ID, otherMessage)
+	msg := tgbotapi.NewMessage(c.ID, newMessage)
 	sendMessageWithRetry(bot, msg, 10)
 }
 
